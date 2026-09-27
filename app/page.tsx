@@ -9,10 +9,12 @@ import { CheckIn } from "../components/CheckIn";
 import { ServiceWorkerRegister } from "../components/ServiceWorkerRegister";
 import { ENCOURAGEMENTS, SPRINT_STEPS, type Energy } from "../lib/coach";
 import { useFocusTimer } from "../hooks/useFocusTimer";
+import { useTinyWins } from "../hooks/useTinyWins";
 
 export default function Home() {
   const [energy, setEnergy] = useState<Energy>("high");
   const timer = useFocusTimer(20);
+  const winsApi = useTinyWins();
   const steps = SPRINT_STEPS[energy];
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -35,6 +37,13 @@ export default function Home() {
       <div className="max-w-md mx-auto px-4 py-8">
         {/* Header */}
         <header className="text-center mb-5">
+          <img
+            src="/icons/icon-192.png"
+            alt="Porchlight Agent logo"
+            width={192}
+            height={192}
+            className="w-16 h-16 mx-auto mb-3 rounded-[1.1rem] shadow-md"
+          />
           <h1 className="text-2xl font-bold text-gray-900">Porchlight Agent</h1>
           <p className="text-sm text-gray-500 mt-1">ADHD friendly companion</p>
           <p className="text-xs text-gray-400 mt-2">
@@ -92,12 +101,19 @@ export default function Home() {
 
         {/* Tiny wins */}
         <div className="mb-4">
-          <TinyWins />
+          <TinyWins
+            wins={winsApi.wins}
+            onToggle={winsApi.toggle}
+            onRemove={winsApi.remove}
+          />
         </div>
 
         {/* Chat */}
         <div className="mb-6">
-          <CompanionChat onStartSprint={(m) => timer.start(m)} />
+          <CompanionChat
+            onStartSprint={(m) => timer.start(m)}
+            onAddWin={winsApi.addWin}
+          />
         </div>
 
         <footer className="text-center text-xs text-gray-400 pb-4">

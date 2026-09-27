@@ -1,72 +1,57 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { TINY_WINS } from "../lib/coach";
+import type { Win } from "../hooks/useTinyWins";
 
-const KEY = "porchlight:tinywins:v1";
+interface Props {
+  wins: Win[];
+  onToggle: (i: number) => void;
+  onRemove: (i: number) => void;
+}
 
-export function TinyWins() {
-  const [done, setDone] = useState<boolean[]>(() => TINY_WINS.map(() => false));
-  const [hidden, setHidden] = useState(false);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length === TINY_WINS.length) setDone(parsed);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(done));
-    } catch {
-      /* ignore */
-    }
-  }, [done]);
-
-  const toggle = (i: number) =>
-    setDone((d) => d.map((v, idx) => (idx === i ? !v : v)));
-
-  const completed = done.filter(Boolean).length;
+export function TinyWins({ wins, onToggle, onRemove }: Props) {
+  const completed = wins.filter((w) => w.done).length;
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-1">
         <h2 className="text-sm font-medium text-gray-500">
-          Tiny wins{completed > 0 ? ` (${completed}/${TINY_WINS.length})` : ""}
+          Tiny wins
+          {completed > 0 ? ` (${completed}/${wins.length})` : ""}
         </h2>
-        <button
-          onClick={() => setHidden((h) => !h)}
-          className="text-xs px-3 py-1 rounded-full border border-gray-200 text-gray-500 hover:border-gray-400 transition"
-        >
-          {hidden ? "Show" : "Hide"}
-        </button>
       </div>
-
-      {!hidden && (
-        <div className="flex flex-wrap gap-2">
-          {TINY_WINS.map((w, i) => (
+      <p className="text-xs text-gray-400 mb-3">
+        Tap to check off. Ask Porchlight in the chat below to add new ones.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {wins.map((w, i) => (
+          <span
+            key={`${w.text}-${i}`}
+            className={`inline-flex items-center gap-1 pl-3 pr-1.5 py-1.5 rounded-full text-xs border transition ${
+              w.done
+                ? "bg-green-50 text-green-700 border-green-300"
+                : "bg-white text-gray-600 border-gray-200"
+            }`}
+          >
             <button
-              key={w}
-              onClick={() => toggle(i)}
-              aria-pressed={done[i]}
-              className={`px-3 py-1.5 rounded-full text-xs border transition ${
-                done[i]
-                  ? "bg-green-50 text-green-700 border-green-300 line-through"
-                  : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
-              }`}
+              onClick={() => onToggle(i)}
+              aria-pressed={w.done}
+              className={w.done ? "line-through" : "hover:text-gray-900"}
             >
-              {done[i] ? "✓ " : ""}
-              {w}
+              {w.done ? "✓ " : ""}
+              {w.text}
             </button>
-          ))}
-        </div>
-      )}
+            {w.custom && (
+              <button
+                onClick={() => onRemove(i)}
+                aria-label={`Remove ${w.text}`}
+                className="ml-1 w-4 h-4 rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 text-[10px] leading-none"
+              >
+                ×
+              </button>
+            )}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

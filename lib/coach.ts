@@ -59,8 +59,9 @@ export const ENCOURAGEMENTS: string[] = [
 ];
 
 export interface CoachAction {
-  type: "start-sprint";
-  minutes: number;
+  type: "start-sprint" | "add-win";
+  minutes?: number;
+  text?: string;
 }
 
 export interface CoachReply {
@@ -68,8 +69,30 @@ export interface CoachReply {
   action?: CoachAction;
 }
 
+/** Extract a task from "add X to my list" style messages. Null if none. */
+export function extractTask(raw: string): string | null {
+  const m = raw.match(
+    /^(?:please\s+)?(?:add|remember to|remind me to|i need to|i have to|i've got to|i gotta|put|note down|note|can you add)\b\s*:?\s*(.+)$/i
+  );
+  if (!m) return null;
+  const task = m[1]
+    .trim()
+    .replace(/\s+(to|on)\s+my\s+(tiny\s+wins?\s?)?lists?\.?$/i, "")
+    .replace(/\s+(to|on)\s+the\s+lists?\.?$/i, "")
+    .replace(/[.]+$/, "")
+    .replace(/\s+/g, " ")
+    .slice(0, 80);
+  if (task.length < 2) return null;
+  return task.charAt(0).toUpperCase() + task.slice(1);
+}
+
 export function coachRespond(raw: string): CoachReply {
   const text = raw.toLowerCase();
+
+  const task = extractTask(raw);
+  if (task) {
+    return { reply: "", action: { type: "add-win", text: task } };
+  }
 
   const sprintMatch =
     text.match(/sprint[^\d]*(\d+)\s*(min|minute)/) ||
@@ -90,6 +113,62 @@ export function coachRespond(raw: string): CoachReply {
       reply:
         "Let us do 20 minutes. One goal, one tab, notifications off. Tap Start when you are ready.",
       action: { type: "start-sprint", minutes: 20 },
+    };
+  }
+
+  if (/(overwhelm|too much|so much to do|stressed)/.test(text)) {
+    return {
+      reply:
+        "When everything feels like too much, the list is lying to you. There is only the next tiny step. Tell me one small thing and we will put it on your tiny wins.",
+    };
+  }
+
+  if (/(guilt|guilty|ashamed|lazy|useless)/.test(text)) {
+    return {
+      reply:
+        "You are not lazy. Guilt is just a sign you care. Let us trade it for one tiny, doable step. What is the smallest thing you could do right now?",
+    };
+  }
+
+  if (/(distract|procrastinat|scrolling|doomscroll)/.test(text)) {
+    return {
+      reply:
+        "Try this: close every tab except one, phone face-down, and a 20-minute timer. Your only job is the next tiny step, not the whole mountain.",
+    };
+  }
+
+  if (/(anxious|anxiety|worried|scared|nervous)/.test(text)) {
+    return {
+      reply:
+        "That tight feeling makes sense. Slow down with me: name one thing that is actually due today, and let the rest wait its turn. Want a short sprint to move through it?",
+    };
+  }
+
+  if (/(sad|down|depress|lonely|hopeless)/.test(text)) {
+    return {
+      reply:
+        "I hear you, and I am glad you told me. Be extra gentle with yourself today. One tiny win is plenty. If it gets heavy, please reach out to someone you trust.",
+    };
+  }
+
+  if (/(happy|great|good|excited|proud|awesome)/.test(text)) {
+    return {
+      reply:
+        "Yes. Soak that in for a second, you earned it. Want to ride the wave with a sprint while the energy is here?",
+    };
+  }
+
+  if (/(bored|boring|restless)/.test(text)) {
+    return {
+      reply:
+        "Restless brains need a target, not a lecture. Give me 20 minutes on one thing and let us see what happens. Or add something fun to your tiny wins.",
+    };
+  }
+
+  if (/(what can you do|who are you|your name|help me$|help$)/.test(text)) {
+    return {
+      reply:
+        'I am Porchlight, your focus companion. I can start a sprint timer ("sprint for 25 minutes"), add to your tiny wins ("add drink water to my list"), or just talk things through.',
     };
   }
 
