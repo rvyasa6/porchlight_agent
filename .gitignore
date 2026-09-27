@@ -6,3 +6,6 @@ out/
 # misc
 .DS_Store
 *.local
+# chrome extension build artifacts
+extension/dist/
+extension/porchlight-extension.zip
