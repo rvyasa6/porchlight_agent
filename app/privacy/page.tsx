@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Privacy Policy — Porchlight",
@@ -129,9 +130,9 @@ export default function PrivacyPage() {
         </div>
 
         <footer className="mt-10 pt-6 border-t border-white/10 text-sm text-slate-400">
-          <a href="/" className="text-amber-300 underline">
+          <Link href="/" className="text-amber-300 underline">
             Back to Porchlight
-          </a>
+          </Link>
         </footer>
       </div>
     </main>
