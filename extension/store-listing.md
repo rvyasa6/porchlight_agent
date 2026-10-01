@@ -4,7 +4,7 @@
 Porchlight — Companion & Productivity Booster
 
 ## Short description (132 chars max)
-Your ADHD-friendly companion and productivity booster: energy-aware focus sprints, timers, tiny wins, and a calm on-device coach.
+Your gentle focus companion and productivity booster: energy-aware focus sprints, timers, tiny wins, and a calm on-device coach.
 
 ## Detailed description
 Meet Porchlight, your companion for getting things done on low spoons and high energy alike.
@@ -21,4 +21,4 @@ PRIVATE BY DESIGN: no account, no analytics, no tracking. Everything stays on yo
 
 Use it from the toolbar popup or pin it to Chrome's side panel so your companion is always one click away.
 
-Built with care for the ADHD community. Not medical advice.
+Built with care. Not medical advice.
