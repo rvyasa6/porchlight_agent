@@ -4,7 +4,7 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "Privacy Policy — Porchlight",
   description:
-    "Privacy policy for Porchlight, the ADHD-friendly focus companion (web app and Chrome extension).",
+    "Privacy policy for Porchlight, the gentle focus companion (web app and Chrome extension).",
 };
 
 const updated = "September 28, 2026";
@@ -25,7 +25,7 @@ export default function PrivacyPage() {
 
         <div className="space-y-6 text-[15px] leading-relaxed text-slate-200">
           <p>
-            Porchlight is an ADHD-friendly focus companion: energy-aware
+            Porchlight is a gentle focus companion: energy-aware
             check-ins, focus sprint timers, tiny-wins checklists, and a calm
             chat coach. This policy covers the Porchlight web app and the
             Porchlight Chrome extension (&ldquo;Porchlight &mdash; Companion
