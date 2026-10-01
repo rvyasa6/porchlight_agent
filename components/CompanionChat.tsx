@@ -4,10 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import {
   coachRespond,
   dueLabel,
+  needsSmartParse,
+  CATEGORY_LABELS,
+  type Category,
   type CoachAction,
   type Effort,
 } from "../lib/coach";
-import { fetchLLMReply, parseLLMTags } from "../lib/llm";
+import { fetchLLMReply, fetchTaskParse, parseLLMTags } from "../lib/llm";
 import type { AddWinOptions, AddWinResult } from "../hooks/useTinyWins";
 
 interface Msg {
@@ -41,18 +44,61 @@ export function CompanionChat({ onStartSprint, onAddWin, incoming }: Props) {
     }
   }, [incoming]);
 
-  const confirmAddWin = (
-    text: string,
-    opts?: AddWinOptions
-  ): string => {
+  const confirmAddWin = (text: string, opts?: AddWinOptions): string => {
     const res = onAddWin(text, opts);
     if (res === "added") {
       const when = opts?.due ? ` for ${dueLabel(opts.due)}` : "";
+      const bucket =
+        opts?.category && opts.category !== "other"
+          ? ` (${CATEGORY_LABELS[opts.category as Category]})`
+          : "";
       const flag = opts?.important ? " Marked as a key task." : "";
-      return `Added "${text}"${when} to your tiny wins.${flag} Small steps count.`;
+      return `Added "${text}"${when} to your tiny wins${bucket}.${flag} Small steps count.`;
     }
-    if (res === "duplicate") return `"${text}" is already on your tiny wins list.`;
+    if (res === "duplicate")
+      return `"${text}" is already on your tiny wins list.`;
     return `I did not catch a task there. Try "Add drink water to my list".`;
+  };
+
+  /** Long or list-like adds go through the LLM splitter so each real task
+   *  lands cleanly instead of the raw sentence. Falls back to verbatim. */
+  const smartAddWin = async (
+    action: CoachAction,
+    say: (t: string) => void
+  ) => {
+    if (!action.text) return;
+    setThinking(true);
+    try {
+      const items = await fetchTaskParse(action.text);
+      if (items && items.length > 0) {
+        const added: string[] = [];
+        for (const it of items) {
+          const r = onAddWin(it.title, {
+            effort: action.effort as Effort | undefined,
+            important: action.important,
+            category: it.category,
+            due: action.due,
+          });
+          if (r === "added") added.push(it.title);
+        }
+        say(
+          added.length > 0
+            ? `Split that into ${added.length} task${added.length === 1 ? "" : "s"}: ${added.join(", ")}.`
+            : "Those are already on your list."
+        );
+      } else {
+        say(
+          confirmAddWin(action.text, {
+            effort: action.effort as Effort | undefined,
+            important: action.important,
+            category: action.category as Category | undefined,
+            due: action.due,
+          })
+        );
+      }
+    } finally {
+      setThinking(false);
+    }
   };
 
   const applyAction = (action: CoachAction, say: (t: string) => void) => {
@@ -63,6 +109,7 @@ export function CompanionChat({ onStartSprint, onAddWin, incoming }: Props) {
         confirmAddWin(action.text, {
           effort: action.effort as Effort | undefined,
           important: action.important,
+          category: action.category as Category | undefined,
           due: action.due,
         })
       );
@@ -79,8 +126,12 @@ export function CompanionChat({ onStartSprint, onAddWin, incoming }: Props) {
 
     // Rule-based engine first: instant for commands like sprints and tasks.
     const { reply, action } = coachRespond(text);
-    if (action?.type === "add-win") {
-      applyAction(action, say);
+    if (action?.type === "add-win" && action.text) {
+      if (needsSmartParse(action.text)) {
+        await smartAddWin(action, say);
+      } else {
+        applyAction(action, say);
+      }
       return;
     }
     if (action?.type === "start-sprint") {
