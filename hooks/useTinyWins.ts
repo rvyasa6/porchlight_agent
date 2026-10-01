@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { TINY_WINS, type Effort } from "../lib/coach";
+import {
+  TINY_WINS,
+  categorizeTask,
+  type Category,
+  type Effort,
+} from "../lib/coach";
 
 export interface Win {
   text: string;
@@ -9,12 +14,14 @@ export interface Win {
   custom: boolean;
   effort: Effort;
   important: boolean;
+  category: Category;
   due?: string; // YYYY-MM-DD local; undefined means today/anytime
 }
 
 export interface AddWinOptions {
   effort?: Effort;
   important?: boolean;
+  category?: Category;
   due?: string;
 }
 
@@ -27,12 +34,24 @@ function normalize(raw: unknown): Win | null {
   if (!raw || typeof raw !== "object") return null;
   const c = raw as Partial<Win>;
   if (typeof c.text !== "string" || !c.text.trim()) return null;
+  const text = c.text.trim().slice(0, 80);
+  const validCats: Category[] = [
+    "productivity",
+    "shopping",
+    "wellness",
+    "home",
+    "other",
+  ];
   return {
-    text: c.text.trim().slice(0, 80),
+    text,
     done: !!c.done,
     custom: true,
     effort: c.effort === "hard" ? "hard" : "easy",
     important: !!c.important,
+    category:
+      c.category && validCats.includes(c.category)
+        ? c.category
+        : categorizeTask(text),
     due: typeof c.due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.due) ? c.due : undefined,
   };
 }
@@ -45,6 +64,7 @@ export function useTinyWins() {
       custom: false,
       effort: "easy" as Effort,
       important: false,
+      category: "wellness" as Category,
     }))
   );
   const winsRef = useRef(wins);
@@ -70,6 +90,7 @@ export function useTinyWins() {
           custom: false,
           effort: "easy" as Effort,
           important: false,
+          category: "wellness" as Category,
         })),
         ...custom.map(normalize).filter((c): c is Win => c !== null),
       ]);
@@ -115,6 +136,7 @@ export function useTinyWins() {
         custom: true,
         effort: opts?.effort ?? "easy",
         important: !!opts?.important,
+        category: opts?.category ?? categorizeTask(label),
         due: opts?.due,
       };
       setWins((ws) => [...ws, win]);
