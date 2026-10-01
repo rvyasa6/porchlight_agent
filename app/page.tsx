@@ -20,9 +20,9 @@ import { useFocusTimer } from "../hooks/useFocusTimer";
 import { useTinyWins } from "../hooks/useTinyWins";
 
 const ENERGY_NUDGE: Record<Energy, string> = {
-  high: "High energy, spend it on what matters.",
-  medium: "Steady energy. One step at a time.",
-  low: "Low energy, keep it feather-light.",
+  high: "High energy mode: biggest first.",
+  medium: "Steady mode: important first.",
+  low: "Low energy mode: easiest first.",
 };
 
 export default function Home() {
@@ -35,6 +35,7 @@ export default function Home() {
   const [incoming, setIncoming] = useState<{ id: number; text: string } | null>(
     null
   );
+  const [nextUpText, setNextUpText] = useState<string | null>(null);
   const debriefedRef = useRef(false);
 
   // Split wins into today's list and tasks planned for future days.
@@ -46,9 +47,11 @@ export default function Home() {
     };
   }, [winsApi.wins]);
 
-  // Energy-aware dopamine: surface the best next task for current energy.
+  // Energy-aware dopamine: surface the best next task for current energy,
+  // and highlight it visibly in the list.
   const dopamine = () => {
     const next = nextUpForEnergy(todays, energy);
+    setNextUpText(next ? next.text : null);
     const pick = next
       ? `${ENERGY_NUDGE[energy]} Up next: ${next.text}.`
       : ENCOURAGEMENTS[Math.floor(Math.random() * ENCOURAGEMENTS.length)];
@@ -56,6 +59,11 @@ export default function Home() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 6000);
   };
+
+  // Clear the highlight when energy changes; a new tap re-picks.
+  useEffect(() => {
+    setNextUpText(null);
+  }, [energy]);
 
   // Interactive LLM debrief, once per finished sprint.
   useEffect(() => {
@@ -158,6 +166,7 @@ export default function Home() {
             today={todays}
             planned={planned}
             energy={energy}
+            nextUpText={nextUpText}
             onToggle={winsApi.toggle}
             onRemove={winsApi.remove}
           />
