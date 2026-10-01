@@ -5,6 +5,24 @@ export type Energy = "low" | "medium" | "high";
 
 export type Effort = "easy" | "hard";
 
+export type Category = "productivity" | "shopping" | "wellness" | "home" | "other";
+
+export const CATEGORY_LABELS: Record<Category, string> = {
+  productivity: "Productivity",
+  shopping: "Shopping",
+  wellness: "Wellness",
+  home: "Home",
+  other: "Other",
+};
+
+export const CATEGORY_ORDER: Category[] = [
+  "productivity",
+  "shopping",
+  "wellness",
+  "home",
+  "other",
+];
+
 export const ENERGY_OPTIONS: { id: Energy; label: string }[] = [
   { id: "low", label: "Low energy" },
   { id: "medium", label: "Medium energy" },
@@ -43,10 +61,8 @@ export const SPRINT_STEPS: Record<Energy, SprintSteps> = {
 
 export const TINY_WINS: string[] = [
   "Drink water",
-  "Put one plate in the sink",
-  "Reply to one simple message",
-  "Fold three items of laundry",
-  "Open the document and write one line",
+  "Take a short walk",
+  "Stretch for a minute",
 ];
 
 export const ENCOURAGEMENTS: string[] = [
@@ -67,6 +83,7 @@ export interface CoachAction {
   effort?: Effort;
   important?: boolean;
   due?: string;
+  category?: Category;
 }
 
 export interface CoachReply {
@@ -147,17 +164,57 @@ export interface ParsedTask {
   text: string;
   effort: Effort;
   important: boolean;
+  category: Category;
   due?: string;
 }
 
-/** Full task parse: text plus effort, importance, and due date. Null when no task found. */
+/* ---------- Smart categorization (on-device, zero tokens) ---------- */
+
+const CATEGORY_KEYWORDS: { cat: Category; re: RegExp }[] = [
+  {
+    cat: "shopping",
+    re: /\b(buy|grocery|groceries|shopping|store|market|amazon|pick up|order)\b/i,
+  },
+  {
+    cat: "productivity",
+    re: /\b(call|email|e-mail|report|meeting|deadline|project|work|file|taxes|presentation|submit|review|write|prepare|message)\b/i,
+  },
+  {
+    cat: "wellness",
+    re: /\b(walk|water|stretch|exercise|gym|meditat|sleep|doctor|rest|yoga|run)\b/i,
+  },
+  {
+    cat: "home",
+    re: /\b(clean|laundry|dishes|cook|trash|vacuum|fix|tidy|organize|plate|sink)\b/i,
+  },
+];
+
+/** Bucket a task into Shopping, Productivity, Wellness, Home, or Other. */
+export function categorizeTask(text: string): Category {
+  for (const { cat, re } of CATEGORY_KEYWORDS) {
+    if (re.test(text)) return cat;
+  }
+  return "other";
+}
+
+/** True when the text looks like a list or runs too long for a clean
+ *  verbatim add. Those cases go to the LLM splitter instead. */
+export function needsSmartParse(text: string): boolean {
+  if (text.length > 45) return true;
+  const commas = (text.match(/,/g) || []).length;
+  if (commas >= 2) return true;
+  if (commas >= 1 && /\band\b/i.test(text)) return true;
+  return false;
+}
+
+/** Full task parse: text plus effort, importance, category, and due date. Null when no task found. */
 export function parseTask(raw: string): ParsedTask | null {
   const { due, cleaned } = parseDue(raw);
   const text = extractTask(cleaned);
   if (!text) return null;
   const important = IMPORTANT_RE.test(raw);
   const effort: Effort = important || HARD_RE.test(raw) ? "hard" : "easy";
-  return { text, effort, important, due };
+  return { text, effort, important, category: categorizeTask(text), due };
 }
 
 /* ---------- Energy-aware ordering ---------- */
@@ -244,6 +301,7 @@ export function coachRespond(raw: string): CoachReply {
         text: task.text,
         effort: task.effort,
         important: task.important,
+        category: task.category,
         due: task.due,
       },
     };
