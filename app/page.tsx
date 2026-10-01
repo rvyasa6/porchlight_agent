@@ -1,15 +1,29 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EnergyPicker } from "../components/EnergyPicker";
 import { FocusTimer } from "../components/FocusTimer";
 import { TinyWins } from "../components/TinyWins";
 import { CompanionChat } from "../components/CompanionChat";
 import { CheckIn } from "../components/CheckIn";
 import { ServiceWorkerRegister } from "../components/ServiceWorkerRegister";
-import { ENCOURAGEMENTS, SPRINT_STEPS, type Energy } from "../lib/coach";
+import {
+  ENCOURAGEMENTS,
+  SPRINT_STEPS,
+  debriefFallback,
+  nextUpForEnergy,
+  todayISO,
+  type Energy,
+} from "../lib/coach";
+import { fetchDebriefReply } from "../lib/llm";
 import { useFocusTimer } from "../hooks/useFocusTimer";
 import { useTinyWins } from "../hooks/useTinyWins";
+
+const ENERGY_NUDGE: Record<Energy, string> = {
+  high: "High energy, spend it on what matters.",
+  medium: "Steady energy. One step at a time.",
+  low: "Low energy, keep it feather-light.",
+};
 
 export default function Home() {
   const [energy, setEnergy] = useState<Energy>("high");
@@ -18,13 +32,52 @@ export default function Home() {
   const steps = SPRINT_STEPS[energy];
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [incoming, setIncoming] = useState<{ id: number; text: string } | null>(
+    null
+  );
+  const debriefedRef = useRef(false);
 
+  // Split wins into today's list and tasks planned for future days.
+  const { todays, planned } = useMemo(() => {
+    const t = todayISO();
+    return {
+      todays: winsApi.wins.filter((w) => !w.due || w.due <= t),
+      planned: winsApi.wins.filter((w) => w.due && w.due > t),
+    };
+  }, [winsApi.wins]);
+
+  // Energy-aware dopamine: surface the best next task for current energy.
   const dopamine = () => {
-    const pick = ENCOURAGEMENTS[Math.floor(Math.random() * ENCOURAGEMENTS.length)];
+    const next = nextUpForEnergy(todays, energy);
+    const pick = next
+      ? `${ENERGY_NUDGE[energy]} Up next: ${next.text}.`
+      : ENCOURAGEMENTS[Math.floor(Math.random() * ENCOURAGEMENTS.length)];
     setToast(pick);
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 4500);
+    toastTimer.current = setTimeout(() => setToast(null), 6000);
   };
+
+  // Interactive LLM debrief, once per finished sprint.
+  useEffect(() => {
+    if (timer.running) {
+      debriefedRef.current = false;
+      return;
+    }
+    if (!timer.finished || debriefedRef.current) return;
+    debriefedRef.current = true;
+    const doneCount = winsApi.wins.filter((w) => w.done).length;
+    const pendingCount = winsApi.wins.length - doneCount;
+    const minutes = timer.durationMin;
+    fetchDebriefReply({ minutes, energy, doneCount, pendingCount }).then(
+      (reply) => {
+        setIncoming({
+          id: Date.now(),
+          text: reply ?? debriefFallback(minutes, doneCount),
+        });
+      }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timer.finished, timer.running]);
 
   const toggleTimer = () => {
     if (timer.running) timer.pause();
@@ -102,7 +155,9 @@ export default function Home() {
         {/* Tiny wins */}
         <div className="mb-4">
           <TinyWins
-            wins={winsApi.wins}
+            today={todays}
+            planned={planned}
+            energy={energy}
             onToggle={winsApi.toggle}
             onRemove={winsApi.remove}
           />
@@ -113,6 +168,7 @@ export default function Home() {
           <CompanionChat
             onStartSprint={(m) => timer.start(m)}
             onAddWin={winsApi.addWin}
+            incoming={incoming}
           />
         </div>
 
