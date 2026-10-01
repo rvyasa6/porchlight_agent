@@ -1,9 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { coachRespond, type CoachAction } from "../lib/coach";
+import {
+  coachRespond,
+  dueLabel,
+  type CoachAction,
+  type Effort,
+} from "../lib/coach";
 import { fetchLLMReply, parseLLMTags } from "../lib/llm";
-import type { AddWinResult } from "../hooks/useTinyWins";
+import type { AddWinOptions, AddWinResult } from "../hooks/useTinyWins";
 
 interface Msg {
   from: "you" | "porch";
@@ -12,22 +17,40 @@ interface Msg {
 
 interface Props {
   onStartSprint: (minutes: number) => void;
-  onAddWin: (text: string) => AddWinResult;
+  onAddWin: (text: string, opts?: AddWinOptions) => AddWinResult;
+  /** Messages pushed in from outside the chat, e.g. the end-of-sprint debrief. */
+  incoming: { id: number; text: string } | null;
 }
 
-export function CompanionChat({ onStartSprint, onAddWin }: Props) {
+export function CompanionChat({ onStartSprint, onAddWin, incoming }: Props) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const lastIncomingId = useRef<number | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [msgs, thinking]);
 
-  const confirmAddWin = (text: string): string => {
-    const res = onAddWin(text);
-    if (res === "added") return `Added "${text}" to your tiny wins. Small steps count.`;
+  // External messages (sprint debrief) join the conversation once.
+  useEffect(() => {
+    if (incoming && incoming.id !== lastIncomingId.current) {
+      lastIncomingId.current = incoming.id;
+      setMsgs((m) => [...m, { from: "porch", text: incoming.text }]);
+    }
+  }, [incoming]);
+
+  const confirmAddWin = (
+    text: string,
+    opts?: AddWinOptions
+  ): string => {
+    const res = onAddWin(text, opts);
+    if (res === "added") {
+      const when = opts?.due ? ` for ${dueLabel(opts.due)}` : "";
+      const flag = opts?.important ? " Marked as a key task." : "";
+      return `Added "${text}"${when} to your tiny wins.${flag} Small steps count.`;
+    }
     if (res === "duplicate") return `"${text}" is already on your tiny wins list.`;
     return `I did not catch a task there. Try "Add drink water to my list".`;
   };
@@ -36,7 +59,13 @@ export function CompanionChat({ onStartSprint, onAddWin }: Props) {
     if (action.type === "start-sprint" && action.minutes) {
       onStartSprint(action.minutes);
     } else if (action.type === "add-win" && action.text) {
-      say(confirmAddWin(action.text));
+      say(
+        confirmAddWin(action.text, {
+          effort: action.effort as Effort | undefined,
+          important: action.important,
+          due: action.due,
+        })
+      );
     }
   };
 
@@ -126,7 +155,7 @@ export function CompanionChat({ onStartSprint, onAddWin }: Props) {
           onKeyDown={(e) => {
             if (e.key === "Enter") send();
           }}
-          placeholder='Try: Add call mom to my list'
+          placeholder='Try: Add call mom for tomorrow'
           className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition"
         />
         <button
