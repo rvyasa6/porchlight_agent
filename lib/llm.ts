@@ -2,7 +2,14 @@
  * Uses the Pollinations free text API (no key, no account). The rule-based
  * coach in coach.ts always stays as the instant fallback, so chat never
  * breaks when the network or the free API is unavailable.
- * Only the chat message text is sent; check-ins and wins stay on-device. */
+ * Only the chat message text is sent; check-ins and wins stay on-device.
+ *
+ * Token budget: open chat messages are capped at 150 tokens; the
+ * end-of-sprint debrief below fires at most once per finished sprint
+ * and is capped at 90 tokens. All scheduling and energy-aware ordering
+ * is computed on-device with zero LLM calls. */
+
+import type { Energy } from "./coach";
 
 const SYSTEM = `You are Porchlight, a warm and gentle companion for adults with ADHD. You help with focus, energy awareness, and celebrating tiny wins.
 
@@ -53,6 +60,46 @@ export async function fetchLLMReply(userText: string): Promise<string | null> {
         ],
         temperature: 0.8,
         max_tokens: 150,
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const content = data?.choices?.[0]?.message?.content;
+    return typeof content === "string" && content.trim()
+      ? content.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface DebriefContext {
+  minutes: number;
+  energy: Energy;
+  doneCount: number;
+  pendingCount: number;
+}
+
+/** One short interactive debrief when a sprint ends. Fires at most once per
+ *  finished sprint, capped at 90 tokens. Null when the free API is down. */
+export async function fetchDebriefReply(
+  ctx: DebriefContext
+): Promise<string | null> {
+  const prompt =
+    `The user just finished a ${ctx.minutes}-minute focus sprint feeling ${ctx.energy} energy. ` +
+    `Tiny wins completed: ${ctx.doneCount}. Still open: ${ctx.pendingCount}. ` +
+    `In 2 short sentences: celebrate warmly, then ask one specific reflective question about how the sprint went. ` +
+    `No em dashes. Never give medical advice.`;
+  try {
+    const res = await fetch("https://text.pollinations.ai/openai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "openai",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
+        max_tokens: 90,
       }),
       signal: AbortSignal.timeout(20000),
     });

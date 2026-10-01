@@ -3,6 +3,8 @@
 
 export type Energy = "low" | "medium" | "high";
 
+export type Effort = "easy" | "hard";
+
 export const ENERGY_OPTIONS: { id: Energy; label: string }[] = [
   { id: "low", label: "Low energy" },
   { id: "medium", label: "Medium energy" },
@@ -62,11 +64,155 @@ export interface CoachAction {
   type: "start-sprint" | "add-win";
   minutes?: number;
   text?: string;
+  effort?: Effort;
+  important?: boolean;
+  due?: string;
 }
 
 export interface CoachReply {
   reply: string;
   action?: CoachAction;
+}
+
+/* ---------- Dates (local timezone, YYYY-MM-DD) ---------- */
+
+/** "2026-09-30" in the user's local timezone. */
+export function isoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function todayISO(): string {
+  return isoDate(new Date());
+}
+
+export function addDaysISO(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return isoDate(d);
+}
+
+export function parseISODate(s: string): Date {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
+/** "Today", "Tomorrow", or like "Thu, Oct 2". */
+export function dueLabel(due: string): string {
+  if (due <= todayISO()) return "Today";
+  if (due === addDaysISO(1)) return "Tomorrow";
+  return parseISODate(due).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/** Pull a due date ("tomorrow", "today", "next week", "in N days") out of free text. */
+export function parseDue(raw: string): { due?: string; cleaned: string } {
+  let cleaned = raw;
+  let due: string | undefined;
+  const take = (re: RegExp, days: number) => {
+    if (due) return;
+    const m = cleaned.match(re);
+    if (m) {
+      due = addDaysISO(days);
+      cleaned = cleaned.replace(m[0], " ").replace(/\s+/g, " ").trim();
+    }
+  };
+  take(/\bfor\s+tomorrow\b/i, 1);
+  take(/\btomorrow\b/i, 1);
+  take(/\bfor\s+today\b/i, 0);
+  take(/\btoday\b/i, 0);
+  take(/\bnext\s+week\b/i, 7);
+  const inDays = cleaned.match(/\bin\s+(\d{1,2})\s+days?\b/i);
+  if (!due && inDays) {
+    due = addDaysISO(Math.min(parseInt(inDays[1], 10), 60));
+    cleaned = cleaned.replace(inDays[0], " ").replace(/\s+/g, " ").trim();
+  }
+  // Tidy a dangling preposition left behind, e.g. "add dentist for".
+  cleaned = cleaned.replace(/\s+(for|on|by)\s*$/i, "").trim();
+  return { due, cleaned };
+}
+
+/* ---------- Task parsing ---------- */
+
+const IMPORTANT_RE = /(important|urgent|deadline|priority|must[-\s]?do)/i;
+const HARD_RE =
+  /(hard|difficult|tough|big|deep work|report|taxes|exam|project|presentation|essay)/i;
+
+export interface ParsedTask {
+  text: string;
+  effort: Effort;
+  important: boolean;
+  due?: string;
+}
+
+/** Full task parse: text plus effort, importance, and due date. Null when no task found. */
+export function parseTask(raw: string): ParsedTask | null {
+  const { due, cleaned } = parseDue(raw);
+  const text = extractTask(cleaned);
+  if (!text) return null;
+  const important = IMPORTANT_RE.test(raw);
+  const effort: Effort = important || HARD_RE.test(raw) ? "hard" : "easy";
+  return { text, effort, important, due };
+}
+
+/* ---------- Energy-aware ordering ---------- */
+
+export interface OrderableWin {
+  done: boolean;
+  effort?: Effort;
+  important?: boolean;
+}
+
+/** Energy-aware ordering: high energy puts important and hard tasks first,
+ *  low energy puts easy ones first. Done items always sink. Stable sort. */
+export function orderWinsByEnergy<T extends OrderableWin>(
+  wins: T[],
+  energy: Energy
+): T[] {
+  const score = (w: T): number => {
+    let s = 0;
+    if (w.done) s += 1000;
+    const effort = w.effort ?? "easy";
+    const important = !!w.important;
+    if (energy === "high") {
+      if (important) s -= 30;
+      if (effort === "hard") s -= 10;
+    } else if (energy === "low") {
+      if (!w.done && effort === "easy") s -= 20;
+      if (important) s += 25;
+    } else {
+      if (!w.done && important) s -= 10;
+    }
+    return s;
+  };
+  return wins
+    .map((w, i) => ({ w, i }))
+    .sort((a, b) => score(a.w) - score(b.w) || a.i - b.i)
+    .map((x) => x.w);
+}
+
+/** First incomplete win in energy order, or null when everything is done. */
+export function nextUpForEnergy<T extends OrderableWin>(
+  wins: T[],
+  energy: Energy
+): T | null {
+  const ordered = orderWinsByEnergy(wins, energy);
+  return ordered.find((w) => !w.done) ?? null;
+}
+
+/** Rule-based sprint debrief used when the LLM is unreachable. */
+export function debriefFallback(minutes: number, doneCount: number): string {
+  if (doneCount > 0) {
+    return `Sprint complete, ${minutes} minutes banked and ${doneCount} win${
+      doneCount === 1 ? "" : "s"
+    } checked off. How did it feel? What helped the most?`;
+  }
+  return `Sprint complete. Showing up for ${minutes} minutes still counts. What got in the way, and what is one tiny tweak for next time?`;
 }
 
 /** Extract a task from "add X to my list" style messages. Null if none. */
@@ -89,9 +235,18 @@ export function extractTask(raw: string): string | null {
 export function coachRespond(raw: string): CoachReply {
   const text = raw.toLowerCase();
 
-  const task = extractTask(raw);
+  const task = parseTask(raw);
   if (task) {
-    return { reply: "", action: { type: "add-win", text: task } };
+    return {
+      reply: "",
+      action: {
+        type: "add-win",
+        text: task.text,
+        effort: task.effort,
+        important: task.important,
+        due: task.due,
+      },
+    };
   }
 
   const sprintMatch =
@@ -168,7 +323,7 @@ export function coachRespond(raw: string): CoachReply {
   if (/(what can you do|who are you|your name|help me$|help$)/.test(text)) {
     return {
       reply:
-        'I am Porchlight, your focus companion. I can start a sprint timer ("sprint for 25 minutes"), add to your tiny wins ("add drink water to my list"), or just talk things through.',
+        'I am Porchlight, your focus companion. I can start a sprint timer ("sprint for 25 minutes"), add to your tiny wins ("add call mom for tomorrow" to plan ahead), or just talk things through.',
     };
   }
 
