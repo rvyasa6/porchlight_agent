@@ -106,7 +106,7 @@ export default function Home() {
             className="w-16 h-16 mx-auto mb-3 rounded-[1.1rem] shadow-md"
           />
           <h1 className="text-2xl font-bold text-gray-900">Porchlight Agent</h1>
-          <p className="text-sm text-gray-500 mt-1">ADHD friendly companion</p>
+          <p className="text-sm text-gray-500 mt-1">Your gentle focus companion</p>
           <p className="text-xs text-gray-400 mt-2">
             Not medical advice. For emergencies, contact local services or a trusted person.
           </p>
@@ -182,7 +182,7 @@ export default function Home() {
         </div>
 
         <footer className="text-center text-xs text-gray-400 pb-4">
-          Built with care for the ADHD community. Small steps count. Wins are welcome.
+          Built with care. Small steps count. Wins are welcome.
         </footer>
       </div>
 

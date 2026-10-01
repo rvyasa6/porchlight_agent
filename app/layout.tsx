@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Porchlight Agent",
   description:
-    "ADHD-friendly companion: gentle focus sprints, energy-aware steps, tiny wins, and check-ins.",
+    "Gentle focus companion: energy-aware sprints, tiny wins, and check-ins.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
