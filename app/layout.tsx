@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Porchlight Agent",
+  title: "Porchlight",
   description:
-    "Gentle focus companion: energy-aware sprints, tiny wins, and check-ins.",
+    "Your gentle daily companion: chat, tasks, focus sprints, and tiny wins.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#041c51",
+  themeColor: "#0a1230",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",

@@ -1,197 +1,224 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { EnergyPicker } from "../components/EnergyPicker";
-import { FocusTimer } from "../components/FocusTimer";
-import { TinyWins } from "../components/TinyWins";
+import { useCallback, useEffect, useState } from "react";
+import { Fireflies, Lantern } from "../components/Lantern";
+import { EnergyControl } from "../components/EnergyControl";
 import { CompanionChat } from "../components/CompanionChat";
-import { CheckIn } from "../components/CheckIn";
-import { ServiceWorkerRegister } from "../components/ServiceWorkerRegister";
+import { TaskMaster } from "../components/TaskMaster";
+import { FocusTab } from "../components/FocusTab";
+import { WinsTab, countWinsToday } from "../components/WinsTab";
 import {
-  ENCOURAGEMENTS,
-  SPRINT_STEPS,
-  debriefFallback,
-  nextUpForEnergy,
-  todayISO,
-  type Energy,
-} from "../lib/coach";
-import { fetchDebriefReply } from "../lib/llm";
-import { useFocusTimer } from "../hooks/useFocusTimer";
-import { useTinyWins } from "../hooks/useTinyWins";
+  ChatIcon,
+  TasksIcon,
+  TimerIcon,
+  WinsIcon,
+  FlameIcon,
+} from "../components/Icons";
+import { useTasks } from "../lib/taskStore";
+import { getStreak } from "../lib/companion";
+import type { Energy } from "../lib/coach";
 
-const ENERGY_NUDGE: Record<Energy, string> = {
-  high: "High energy mode: biggest first.",
-  medium: "Steady mode: important first.",
-  low: "Low energy mode: easiest first.",
-};
+type Tab = "chat" | "tasks" | "focus" | "wins";
+
+const TABS: { id: Tab; label: string; Icon: typeof ChatIcon }[] = [
+  { id: "chat", label: "Chat", Icon: ChatIcon },
+  { id: "tasks", label: "Tasks", Icon: TasksIcon },
+  { id: "focus", label: "Focus", Icon: TimerIcon },
+  { id: "wins", label: "Wins", Icon: WinsIcon },
+];
+
+const ENERGY_KEY = "porchlight:energy:v1";
 
 export default function Home() {
+  const [tab, setTab] = useState<Tab>("chat");
   const [energy, setEnergy] = useState<Energy>("high");
-  const timer = useFocusTimer(20);
-  const winsApi = useTinyWins();
-  const steps = SPRINT_STEPS[energy];
+  const {
+    tasks,
+    addTasks,
+    toggleTask,
+    removeTask,
+    toggleKey,
+    clearDone,
+    moveToToday,
+  } = useTasks();
+  const [sprintGoal, setSprintGoal] = useState("");
+  const [sprintNonce, setSprintNonce] = useState(0);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [incoming, setIncoming] = useState<{ id: number; text: string } | null>(
-    null
-  );
-  const [nextUpText, setNextUpText] = useState<string | null>(null);
-  const debriefedRef = useRef(false);
+  const [streak, setStreak] = useState(0);
+  const [winsToday, setWinsToday] = useState(0);
 
-  // Split wins into today's list and tasks planned for future days.
-  const { todays, planned } = useMemo(() => {
-    const t = todayISO();
-    return {
-      todays: winsApi.wins.filter((w) => !w.due || w.due <= t),
-      planned: winsApi.wins.filter((w) => w.due && w.due > t),
-    };
-  }, [winsApi.wins]);
-
-  // Energy-aware dopamine: surface the best next task for current energy,
-  // and highlight it visibly in the list.
-  const dopamine = () => {
-    const next = nextUpForEnergy(todays, energy);
-    setNextUpText(next ? next.text : null);
-    const pick = next
-      ? `${ENERGY_NUDGE[energy]} Up next: ${next.text}.`
-      : ENCOURAGEMENTS[Math.floor(Math.random() * ENCOURAGEMENTS.length)];
-    setToast(pick);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 6000);
-  };
-
-  // Clear the highlight when energy changes; a new tap re-picks.
   useEffect(() => {
-    setNextUpText(null);
-  }, [energy]);
-
-  // Interactive LLM debrief, once per finished sprint.
-  useEffect(() => {
-    if (timer.running) {
-      debriefedRef.current = false;
-      return;
+    try {
+      const raw = localStorage.getItem(ENERGY_KEY);
+      if (raw === "low" || raw === "medium" || raw === "high")
+        setEnergy(raw);
+    } catch {
+      /* ignore */
     }
-    if (!timer.finished || debriefedRef.current) return;
-    debriefedRef.current = true;
-    const doneCount = winsApi.wins.filter((w) => w.done).length;
-    const pendingCount = winsApi.wins.length - doneCount;
-    const minutes = timer.durationMin;
-    fetchDebriefReply({ minutes, energy, doneCount, pendingCount }).then(
-      (reply) => {
-        setIncoming({
-          id: Date.now(),
-          text: reply ?? debriefFallback(minutes, doneCount),
-        });
-      }
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timer.finished, timer.running]);
+  }, []);
 
-  const toggleTimer = () => {
-    if (timer.running) timer.pause();
-    else timer.start();
+  const refreshMeta = useCallback(() => {
+    setStreak(getStreak());
+    setWinsToday(countWinsToday());
+  }, []);
+
+  useEffect(() => {
+    refreshMeta();
+  }, [tab, refreshMeta]);
+
+  useEffect(() => {
+    const onChanged = () => refreshMeta();
+    window.addEventListener("porchlight:wins-changed", onChanged);
+    return () =>
+      window.removeEventListener("porchlight:wins-changed", onChanged);
+  }, [refreshMeta]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // The chat (or tasks) can hand Focus a goal and jump there.
+  const startSprint = useCallback((goal: string) => {
+    setSprintGoal(goal);
+    setSprintNonce((n) => n + 1);
+    setTab("focus");
+  }, []);
+
+  useEffect(() => {
+    const onSprint = (e: Event) => {
+      const goal = String((e as CustomEvent).detail?.goal ?? "");
+      startSprint(goal);
+    };
+    window.addEventListener("porchlight:start-sprint", onSprint);
+    return () =>
+      window.removeEventListener("porchlight:start-sprint", onSprint);
+  }, [startSprint]);
+
+  const changeEnergy = (e: Energy) => {
+    setEnergy(e);
+    try {
+      localStorage.setItem(ENERGY_KEY, e);
+    } catch {
+      /* ignore */
+    }
   };
+
+  const showTasks = useCallback(
+    (id: string | null, message: string) => {
+      setHighlightId(id);
+      setToast(message);
+      setTab("tasks");
+    },
+    []
+  );
 
   return (
     <main className="min-h-screen">
-      <ServiceWorkerRegister />
-      <div className="max-w-md mx-auto px-4 py-8">
-        {/* Header */}
-        <header className="text-center mb-5">
-          <img
-            src="/icons/icon-192.png"
-            alt="Porchlight Agent logo"
-            width={192}
-            height={192}
-            className="w-16 h-16 mx-auto mb-3 rounded-[1.1rem] shadow-md"
-          />
-          <h1 className="text-2xl font-bold text-gray-900">Porchlight Agent</h1>
-          <p className="text-sm text-gray-500 mt-1">Your gentle focus companion</p>
-          <p className="text-xs text-gray-400 mt-2">
-            Not medical advice. For emergencies, contact local services or a trusted person.
-          </p>
-        </header>
+      <Fireflies />
 
-        {/* Energy */}
-        <div className="mb-5">
-          <EnergyPicker value={energy} onChange={setEnergy} />
-        </div>
-
-        {/* Sprint steps */}
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
-          <div className="space-y-4 text-sm text-gray-700 leading-relaxed">
-            <p>
-              <strong className="text-gray-900">Step 1: Set a specific goal.</strong> {steps.goal}
-            </p>
-            <p>
-              <strong className="text-gray-900">Step 2: Eliminate distractions.</strong>{" "}
-              {steps.distractions}
-            </p>
-            <p>{steps.reminder}</p>
-            <p className="text-gray-500">
-              {timer.running
-                ? `Timer is running: ${timer.durationMin} minutes`
-                : timer.finished
-                  ? "Sprint complete. Nice work."
-                  : "Timer is ready when you are."}
+      {/* Header */}
+      <header className="sticky top-0 z-30 pt-4 pb-3 bg-gradient-to-b from-[#060b24] via-[#060b24]/95 to-transparent">
+        <div className="max-w-md mx-auto px-4 flex items-center gap-3">
+          <Lantern energy={energy} size={38} />
+          <div className="flex-1 min-w-0">
+            <h1 className="font-bold text-lg leading-tight text-[#f3ecdc]">
+              Porchlight
+            </h1>
+            <p className="text-xs text-[#8b93ab]">
+              Your gentle daily companion
             </p>
           </div>
-        </section>
-
-        {/* Timer */}
-        <div className="mb-4">
-          <FocusTimer timer={timer} />
+          {streak > 0 && (
+            <div className="flex items-center gap-1 text-amber-300 text-sm font-semibold">
+              <FlameIcon className="w-4 h-4" />
+              {streak}
+            </div>
+          )}
         </div>
-
-        {/* Actions */}
-        <div className="grid grid-cols-3 gap-2 mb-4">
-          <button
-            onClick={dopamine}
-            className="bg-white rounded-xl py-2.5 text-sm border border-gray-200 text-gray-600 hover:border-gray-400 transition"
-          >
-            Dopamine
-          </button>
-          <button
-            onClick={toggleTimer}
-            className="bg-white rounded-xl py-2.5 text-sm border border-gray-200 text-gray-600 hover:border-gray-400 transition"
-          >
-            {timer.running ? "Pause" : "Timer"}
-          </button>
-          <CheckIn />
+        <div className="max-w-md mx-auto px-4 mt-2.5">
+          <EnergyControl compact value={energy} onChange={changeEnergy} />
         </div>
+      </header>
 
-        {/* Tiny wins */}
-        <div className="mb-4">
-          <TinyWins
-            today={todays}
-            planned={planned}
-            energy={energy}
-            nextUpText={nextUpText}
-            onToggle={winsApi.toggle}
-            onRemove={winsApi.remove}
-          />
-        </div>
-
-        {/* Chat */}
-        <div className="mb-6">
+      {/* Tab content */}
+      <div className="max-w-md mx-auto px-4 pb-32 pt-1 relative">
+        {tab === "chat" && (
           <CompanionChat
-            onStartSprint={(m) => timer.start(m)}
-            onAddWin={winsApi.addWin}
-            incoming={incoming}
+            tasks={tasks}
+            energy={energy}
+            streak={streak}
+            winsToday={winsToday}
+            onStartSprint={startSprint}
+            onShowTasks={showTasks}
           />
-        </div>
-
-        <footer className="text-center text-xs text-gray-400 pb-4">
-          Built with care. Small steps count. Wins are welcome.
-        </footer>
+        )}
+        {tab === "tasks" && (
+          <TaskMaster
+            tasks={tasks}
+            energy={energy}
+            highlightId={highlightId}
+            onToggle={toggleTask}
+            onRemove={removeTask}
+            onToggleKey={toggleKey}
+            onClearDone={clearDone}
+            onMoveToToday={moveToToday}
+            onAddItems={addTasks}
+            onSprintTask={startSprint}
+          />
+        )}
+        {tab === "focus" && (
+          <FocusTab
+            energy={energy}
+            onEnergyChange={changeEnergy}
+            sprintGoal={sprintGoal}
+            sprintNonce={sprintNonce}
+            onBrowseTasks={() => setTab("tasks")}
+          />
+        )}
+        {tab === "wins" && <WinsTab />}
       </div>
 
-      {/* Dopamine toast */}
+      {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 max-w-sm w-[calc(100%-2rem)] bg-gray-900 text-white text-sm rounded-2xl px-4 py-3 shadow-lg">
-          {toast}
+        <div className="fixed bottom-24 inset-x-0 z-40 flex justify-center px-6 pointer-events-none">
+          <div className="msg-in bg-amber-400 text-[#1a1206] text-sm font-semibold px-4 py-2.5 rounded-2xl shadow-lg max-w-sm text-center">
+            {toast}
+          </div>
         </div>
       )}
+
+      {/* Bottom tab bar */}
+      <nav className="tabbar fixed bottom-0 inset-x-0 z-40">
+        <div
+          className="max-w-md mx-auto grid grid-cols-4 px-2 pt-2"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 8px)" }}
+        >
+          {TABS.map(({ id, label, Icon }) => {
+            const active = tab === id;
+            return (
+              <button
+                key={id}
+                onClick={() => setTab(id)}
+                aria-current={active ? "page" : undefined}
+                className={`flex flex-col items-center gap-1 py-1.5 rounded-xl transition ${
+                  active ? "text-amber-300" : "text-[#6b7390] hover:text-[#aab2c9]"
+                }`}
+              >
+                <Icon className="w-[22px] h-[22px]" />
+                <span className="text-[10px] font-medium">{label}</span>
+                <span
+                  className={`w-1 h-1 rounded-full transition ${
+                    active ? "bg-amber-300" : "bg-transparent"
+                  }`}
+                />
+              </button>
+            );
+          })}
+        </div>
+      </nav>
     </main>
   );
 }
