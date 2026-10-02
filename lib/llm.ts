@@ -4,10 +4,11 @@
  * breaks when the network or the free API is unavailable.
  * Only the chat message text is sent; check-ins and wins stay on-device.
  *
- * Token budget: open chat messages are capped at 150 tokens; the
- * end-of-sprint debrief below fires at most once per finished sprint
- * and is capped at 90 tokens. All scheduling and energy-aware ordering
- * is computed on-device with zero LLM calls. */
+ * Token budget: open chat messages are capped at 90 tokens; the
+ * end-of-sprint debrief fires at most once per finished sprint
+ * and is capped at 90 tokens. Task splitting is capped at ~160 tokens.
+ * All scheduling and energy-aware ordering is computed on-device
+ * with zero LLM calls. */
 
 import type { Category, Energy } from "./coach";
 import { CATEGORY_LABELS } from "./coach";
@@ -67,9 +68,7 @@ export async function fetchLLMReply(userText: string): Promise<string | null> {
     if (!res.ok) return null;
     const data = await res.json();
     const content = data?.choices?.[0]?.message?.content;
-    return typeof content === "string" && content.trim()
-      ? content.trim()
-      : null;
+    return typeof content === "string" && content.trim() ? content.trim() : null;
   } catch {
     return null;
   }
@@ -83,7 +82,8 @@ export interface DebriefContext {
 }
 
 /** One short interactive debrief when a sprint ends. Fires at most once per
- *  finished sprint, capped at 90 tokens. Null when the free API is down. */export async function fetchDebriefReply(
+ *  finished sprint, capped at 90 tokens. Null when the free API is down. */
+export async function fetchDebriefReply(
   ctx: DebriefContext
 ): Promise<string | null> {
   const prompt =
@@ -106,9 +106,7 @@ export interface DebriefContext {
     if (!res.ok) return null;
     const data = await res.json();
     const content = data?.choices?.[0]?.message?.content;
-    return typeof content === "string" && content.trim()
-      ? content.trim()
-      : null;
+    return typeof content === "string" && content.trim() ? content.trim() : null;
   } catch {
     return null;
   }
@@ -174,4 +172,118 @@ export async function fetchTaskParse(
   } catch {
     return null;
   }
+}
+
+/* ---------- v2 companion API ---------- */
+
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+async function postChat(
+  messages: ChatMessage[],
+  maxTokens: number,
+  temperature: number
+): Promise<string> {
+  const res = await fetch("https://text.pollinations.ai/openai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "openai",
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+    }),
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!res.ok) throw new Error(`LLM HTTP ${res.status}`);
+  const data = await res.json();
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content !== "string" || !content.trim())
+    throw new Error("LLM empty reply");
+  return content.trim().replace(/\n{3,}/g, "\n\n");
+}
+
+/** Free-form companion reply. Throws when the free API is unreachable. */
+export async function askLLM(
+  messages: ChatMessage[],
+  maxTokens = 90
+): Promise<string> {
+  return postChat(messages, maxTokens, 0.8);
+}
+
+/** One short end-of-sprint debrief. Throws when the free API is unreachable. */
+export async function askDebrief(
+  goal: string,
+  minutes: number
+): Promise<string> {
+  return postChat(
+    [
+      {
+        role: "user",
+        content:
+          `The user just finished a ${minutes}-minute focus sprint` +
+          (goal ? ` on "${goal.slice(0, 80)}"` : "") +
+          `. In 2 short sentences: celebrate warmly, then ask one specific reflective question about how it went. ` +
+          `No em dashes. Never give medical advice.`,
+      },
+    ],
+    90,
+    0.7
+  );
+}
+
+/** System prompt for the companion chat: warm, brief, context-aware. */
+export function buildCompanionSystem(
+  energy: Energy,
+  contextLine: string
+): string {
+  return [
+    "You are Porchlight, a warm and brief companion inside a daily companion app.",
+    `The user has ${energy} energy right now. ${contextLine}`,
+    "Rules: keep replies under 45 words unless they ask for more. Be warm, concrete, and human. Never paste their words back verbatim. When they seem stuck, suggest exactly one small next step. No emojis. No medical claims.",
+    "You can help them plan the day, break down a task, talk something through, or start a focus sprint. Their data stays on their device.",
+  ].join(" ");
+}
+
+/** LLM task split, returning clean titles. Throws when unusable. */
+export async function parseTasks(text: string): Promise<string[]> {
+  const items = await fetchTaskParse(text);
+  if (!items || items.length === 0) throw new Error("LLM parse failed");
+  return items.map((i) => i.title);
+}
+
+/** Rule-based fallback splitter: newlines, list markers, commas, "and". */
+export function splitTasks(text: string): string[] {
+  if (!text.trim()) return [];
+  let parts = text
+    .split(/\r?\n|;/)
+    .flatMap((p) => p.split(/\s+(?=\d+[.)]\s)/))
+    .flatMap((p) => p.split(/\s*,\s*/))
+    .flatMap((p) => {
+      const ands = p.split(/\s+and\s+/i);
+      return ands.length > 2 ? ands : [p];
+    });
+  parts = parts
+    .map((p) =>
+      p
+        .replace(/^[\d]+[.)\]]\s*/, "")
+        .replace(/^[-*•]\s*/, "")
+        .replace(/^(please\s+)?(add|create|note down)\s+/i, "")
+        .trim()
+        .replace(/[.]+$/, "")
+        .replace(/\s+/g, " ")
+    )
+    .filter((p) => p.length >= 2);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of parts) {
+    const key = p.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(p.charAt(0).toUpperCase() + p.slice(1));
+    if (out.length >= 5) break;
+  }
+  return out;
 }
