@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { touchStreakDay } from "../lib/companion";
 
 const KEY = "porchlight:checkins:v1";
 
@@ -33,9 +34,7 @@ function warmReply(level: number): string {
 function todayList(list: Checkin[]): Checkin[] {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
-  return list
-    .filter((c) => c.t >= start.getTime())
-    .sort((a, b) => b.t - a.t);
+  return list.filter((c) => c.t >= start.getTime()).sort((a, b) => b.t - a.t);
 }
 
 function fmtTime(t: number): string {
@@ -84,6 +83,7 @@ export function CheckIn() {
     } catch {
       /* ignore */
     }
+    touchStreakDay();
     setSaved(warmReply(level));
   };
 
@@ -91,26 +91,26 @@ export function CheckIn() {
     <div className="contents">
       <button
         onClick={openModal}
-        className="bg-white rounded-xl py-2.5 text-sm border border-gray-200 text-gray-600 hover:border-gray-400 transition"
+        className="w-full bg-white/[0.06] rounded-xl py-2.5 text-sm border border-white/10 text-[#cfc7b0] hover:border-amber-300/50 transition"
       >
         Check in{history.length > 0 ? ` (${history.length} today)` : ""}
       </button>
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-4"
           onClick={() => setOpen(false)}
         >
           <div
-            className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6"
+            className="bg-[#101a3d] border border-white/10 rounded-2xl shadow-xl w-full max-w-sm p-6"
             onClick={(e) => e.stopPropagation()}
           >
             {!saved ? (
               <>
-                <h2 className="font-semibold text-gray-900 mb-1">
+                <h2 className="font-semibold text-[#f3ecdc] mb-1">
                   How are you, really?
                 </h2>
-                <p className="text-sm text-gray-500 mb-4">
+                <p className="text-sm text-[#8b93ab] mb-4">
                   No wrong answers. This is just for you.
                 </p>
                 <div className="grid grid-cols-5 gap-1.5 mb-4">
@@ -120,8 +120,8 @@ export function CheckIn() {
                       onClick={() => setLevel(l.n)}
                       className={`py-2 px-1 rounded-xl text-xs border transition flex flex-col items-center gap-0.5 ${
                         level === l.n
-                          ? "bg-blue-600 text-white border-blue-600"
-                          : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
+                          ? "bg-amber-400 text-[#1a1206] border-amber-300 font-semibold"
+                          : "bg-white/[0.05] text-[#b9c0d4] border-white/10 hover:border-white/30"
                       }`}
                     >
                       <span className="font-semibold text-sm">{l.n}</span>
@@ -135,19 +135,19 @@ export function CheckIn() {
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   placeholder="One line about your day (optional)"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition mb-4"
+                  className="w-full bg-white/[0.06] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-[#f3ecdc] placeholder-[#6b7390] outline-none focus:border-amber-300/60 focus:ring-2 focus:ring-amber-300/20 transition mb-4"
                 />
                 <div className="flex gap-2 mb-4">
                   <button
                     onClick={save}
                     disabled={level == null}
-                    className="flex-1 bg-blue-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-blue-700 transition disabled:opacity-40"
+                    className="flex-1 bg-amber-400 text-[#1a1206] rounded-xl py-2.5 text-sm font-semibold hover:bg-amber-300 transition disabled:opacity-40"
                   >
                     Save check-in
                   </button>
                   <button
                     onClick={() => setOpen(false)}
-                    className="px-5 rounded-xl py-2.5 text-sm border border-gray-200 text-gray-600 hover:border-gray-400 transition"
+                    className="px-5 rounded-xl py-2.5 text-sm border border-white/15 text-[#b9c0d4] hover:border-white/40 transition"
                   >
                     Cancel
                   </button>
@@ -155,12 +155,12 @@ export function CheckIn() {
               </>
             ) : (
               <div className="text-center py-2">
-                <p className="text-sm text-gray-700 leading-relaxed mb-4">
+                <p className="text-sm text-[#e9e2d0] leading-relaxed mb-4">
                   {saved}
                 </p>
                 <button
                   onClick={() => setOpen(false)}
-                  className="bg-blue-600 text-white rounded-xl px-8 py-2.5 text-sm font-medium hover:bg-blue-700 transition"
+                  className="bg-amber-400 text-[#1a1206] rounded-xl px-8 py-2.5 text-sm font-semibold hover:bg-amber-300 transition"
                 >
                   Done
                 </button>
@@ -168,8 +168,8 @@ export function CheckIn() {
             )}
 
             {history.length > 0 && (
-              <div className="border-t border-gray-100 pt-3 mt-1">
-                <p className="text-xs text-gray-400 mb-2">
+              <div className="border-t border-white/10 pt-3 mt-1">
+                <p className="text-xs text-[#6b7390] mb-2">
                   Your day so far ({history.length})
                 </p>
                 <div className="space-y-1.5 max-h-28 overflow-y-auto">
@@ -178,7 +178,7 @@ export function CheckIn() {
                       key={i}
                       className="flex items-center justify-between text-xs"
                     >
-                      <span className="text-gray-500">
+                      <span className="text-[#8b93ab]">
                         {fmtTime(c.t)} · {levelLabel(c.level)}
                         {c.note ? ` — ${c.note}` : ""}
                       </span>
@@ -188,8 +188,8 @@ export function CheckIn() {
                             key={l.n}
                             className={`w-1.5 h-1.5 rounded-full ${
                               l.n <= c.level
-                                ? "bg-blue-500"
-                                : "bg-gray-200"
+                                ? "bg-amber-400"
+                                : "bg-white/15"
                             }`}
                           />
                         ))}
